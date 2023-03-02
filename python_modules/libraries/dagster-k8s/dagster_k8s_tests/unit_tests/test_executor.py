@@ -189,6 +189,7 @@ def _step_handler_context(pipeline, pipeline_run, instance, executor):
         plan_context=plan_context,
         steps=execution_plan.steps,
         execute_step_args=execute_step_args,
+        print_serialized_events=False,
     )
 
 

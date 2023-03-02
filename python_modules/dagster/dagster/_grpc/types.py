@@ -210,6 +210,7 @@ class ExecuteStepArgs(
             ("retry_mode", Optional[RetryMode]),
             ("known_state", Optional[KnownExecutionState]),
             ("should_verify_step", Optional[bool]),
+            ("print_serialized_events", bool),
         ],
     )
 ):
@@ -222,6 +223,7 @@ class ExecuteStepArgs(
         retry_mode: Optional[RetryMode] = None,
         known_state: Optional[KnownExecutionState] = None,
         should_verify_step: Optional[bool] = None,
+        print_serialized_events: Optional[bool] = None,
     ):
         return super(ExecuteStepArgs, cls).__new__(
             cls,
@@ -237,6 +239,9 @@ class ExecuteStepArgs(
             known_state=check.opt_inst_param(known_state, "known_state", KnownExecutionState),
             should_verify_step=check.opt_bool_param(
                 should_verify_step, "should_verify_step", False
+            ),
+            print_serialized_events=check.opt_bool_param(
+                print_serialized_events, "print_serialized_events", True
             ),
         )
 

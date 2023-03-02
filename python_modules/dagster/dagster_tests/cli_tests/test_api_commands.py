@@ -330,6 +330,47 @@ def test_execute_step():
             )
 
         assert "STEP_SUCCESS" in result.stdout
+        assert (
+            '{"__class__": "StepSuccessData"' not in result.stdout
+        )  # does not include serialized DagsterEvents
+
+
+def test_execute_step_print_serialized_events():
+    with instance_for_test(
+        overrides={
+            "compute_logs": {
+                "module": "dagster._core.storage.noop_compute_log_manager",
+                "class": "NoOpComputeLogManager",
+            }
+        }
+    ) as instance:
+        with get_foo_job_handle(instance) as job_handle:
+            runner = CliRunner()
+
+            run = create_run_for_test(
+                instance,
+                pipeline_name="foo",
+                run_id="new_run",
+                pipeline_code_origin=job_handle.get_python_origin(),
+            )
+
+            args = ExecuteStepArgs(
+                pipeline_origin=job_handle.get_python_origin(),
+                pipeline_run_id=run.run_id,
+                step_keys_to_execute=None,
+                instance_ref=instance.get_ref(),
+                print_serialized_events=True,
+            )
+
+            result = runner_execute_step(
+                runner,
+                args.get_command_args()[5:],
+            )
+
+        assert "STEP_SUCCESS" in result.stdout
+        assert (
+            '{"__class__": "StepSuccessData"' in result.stdout
+        )  # includes serialized DagsterEvents
 
 
 def test_execute_step_with_secrets_loader():
