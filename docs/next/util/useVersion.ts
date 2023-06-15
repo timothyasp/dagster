@@ -68,14 +68,14 @@ export function versionFromPage(page: string | string[]) {
 }
 
 export const useVersion = () => {
-  const router = useRouter();
+  // const router = useRouter();
 
-  const [asPath, setAsPath] = useState('/');
+  // const [asPath, setAsPath] = useState('/');
 
-  useEffect(() => {
-    if (router.isReady) {
-      setAsPath(router.asPath);
-    }
-  }, [router]);
-  return normalizeVersionPath(asPath, ALL_VERSIONS);
+  // useEffect(() => {
+  //   if (router.isReady) {
+  //     setAsPath(router.asPath);
+  //   }
+  // }, [router]);
+  return normalizeVersionPath('/', ALL_VERSIONS);
 };

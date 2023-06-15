@@ -195,6 +195,7 @@ export function Search() {
                       pathname: '/searchpage',
                       query: {query: encodeURIComponent(state.query)},
                     }}
+                    legacyBehavior
                   >
                     <a
                       onClick={() => setIsOpen(false)}

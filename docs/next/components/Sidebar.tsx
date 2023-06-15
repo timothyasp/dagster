@@ -102,7 +102,7 @@ const MenuItem = React.forwardRef<HTMLAnchorElement, React.PropsWithChildren<Men
       hyperlink
     ) : item.isUnversioned ? (
       // unversioned link
-      <NextLink href={item.path} passHref>
+      <NextLink href={item.path} passHref legacyBehavior>
         {hyperlink}
       </NextLink>
     ) : (
