@@ -116,8 +116,8 @@ class SSHResource(ConfigurableResource):
                     self.key_file = identify_file[0]
 
     @property
-    def log(self):
-        return self._logger
+    def log(self) -> logging.Logger:
+        return check.not_none(self._logger)
 
     def get_connection(self) -> SSHClient:
         """Opens a SSH connection to the remote host.
@@ -126,13 +126,13 @@ class SSHResource(ConfigurableResource):
         """
         client = paramiko.SSHClient()
         if not self.allow_host_key_change:
-            self._logger.warning(
+            self.log.warning(
                 "Remote Identification Change is not verified. This won't protect against "
                 "Man-In-The-Middle attacks"
             )
             client.load_system_host_keys()
         if self.no_host_key_check:
-            self._logger.warning(
+            self.log.warning(
                 "No Host Key Verification. This won't protect against Man-In-The-Middle attacks"
             )
             # Default is RejectPolicy
@@ -193,7 +193,7 @@ class SSHResource(ConfigurableResource):
                 ssh_proxy=self._host_proxy,
                 local_bind_address=local_bind_address,
                 remote_bind_address=(remote_host, remote_port),
-                logger=self._logger,  # type: ignore
+                logger=self._logger,
             )
         else:
             client = SSHTunnelForwarder(
@@ -205,7 +205,7 @@ class SSHResource(ConfigurableResource):
                 local_bind_address=local_bind_address,
                 remote_bind_address=(remote_host, remote_port),
                 host_pkey_directories=[],
-                logger=self._logger,  # type: ignore
+                logger=self._logger,
             )
 
         return client
