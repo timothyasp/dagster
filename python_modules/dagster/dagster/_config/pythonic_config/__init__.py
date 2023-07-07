@@ -31,6 +31,7 @@ from dagster import (
 from dagster._annotations import deprecated
 from dagster._config.config_type import (
     Array,
+    ConfigAnyInstance as DagsterAny,
     ConfigFloatInstance,
     ConfigType,
     Noneable,
@@ -78,6 +79,7 @@ from pydantic.fields import (
     SHAPE_LIST,
     SHAPE_MAPPING,
     SHAPE_SINGLETON,
+    SHAPE_TUPLE,
     ModelField,
 )
 
@@ -238,6 +240,8 @@ class Config(MakeConfigCacheable, metaclass=BaseConfigMeta):
                     **nested_values,
                     discriminator_key: discriminated_value,
                 }
+            elif field and field.shape == SHAPE_TUPLE:
+                modified_data[key] = list(value) if value is not None else None
             else:
                 modified_data[key] = value
         super().__init__(**modified_data)
@@ -333,6 +337,8 @@ def _config_value_to_dict_representation(field: Optional[ModelField], value: Any
             return {k: v for k, v in value._convert_to_config_dictionary().items()}  # noqa: SLF001
     elif isinstance(value, Enum):
         return value.name
+    elif isinstance(value, Tuple):
+        return [_config_value_to_dict_representation(None, v) for v in value]
 
     return value
 
@@ -1456,6 +1462,8 @@ def _wrap_config_type(
         return config_type
     elif shape_type == SHAPE_LIST:
         return Array(config_type)
+    elif shape_type == SHAPE_TUPLE:
+        return Array(DagsterAny)
     elif shape_type in MAPPING_TYPES:
         if key_type not in MAPPING_KEY_TYPE_TO_SCALAR:
             raise NotImplementedError(
@@ -1484,6 +1492,9 @@ def _get_inner_field_if_exists(
         return check.not_none(field.sub_fields)[0]
     elif shape_type in MAPPING_TYPES:
         # Mapping has a single subfield, which is the type of the mapping values.
+        return check.not_none(field.sub_fields)[0]
+    elif shape_type == SHAPE_TUPLE:
+        # Tuple has multiple subfields, which are the types of the tuple elements.
         return check.not_none(field.sub_fields)[0]
     else:
         raise NotImplementedError(f"Pydantic shape type {shape_type} not supported.")
