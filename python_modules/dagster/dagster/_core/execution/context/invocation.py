@@ -19,8 +19,10 @@ from dagster._core.definitions.composition import PendingNodeInvocation
 from dagster._core.definitions.decorators.op_decorator import DecoratedOpFunction
 from dagster._core.definitions.dependency import Node, NodeHandle
 from dagster._core.definitions.events import (
+    AssetKey,
     AssetMaterialization,
     AssetObservation,
+    CoercibleToAssetKey,
     ExpectationResult,
     UserEvent,
 )
@@ -116,6 +118,7 @@ class UnboundOpExecutionContext(OpExecutionContext):
         self._partition_key_range = partition_key_range
         self._user_events: List[UserEvent] = []
         self._output_metadata: Dict[str, Any] = {}
+        self._reported_asset_mats: Dict[AssetKey, Optional[Mapping[str, Any]]] = {}
 
         self._assets_def = check.opt_inst_param(assets_def, "assets_def", AssetsDefinition)
 
@@ -328,6 +331,7 @@ class UnboundOpExecutionContext(OpExecutionContext):
             partition_key=self._partition_key,
             partition_key_range=self._partition_key_range,
             assets_def=assets_def,
+            reported_asset_mats=self._reported_asset_mats,
         )
 
     def get_events(self) -> Sequence[UserEvent]:
@@ -429,6 +433,7 @@ class BoundOpExecutionContext(OpExecutionContext):
         partition_key: Optional[str],
         partition_key_range: Optional[PartitionKeyRange],
         assets_def: Optional[AssetsDefinition],
+        reported_asset_mats: Dict[AssetKey, Optional[Mapping[str, Any]]],
     ):
         self._op_def = op_def
         self._op_config = op_config
@@ -447,6 +452,7 @@ class BoundOpExecutionContext(OpExecutionContext):
         self._partition_key = partition_key
         self._partition_key_range = partition_key_range
         self._assets_def = assets_def
+        self._reported_asset_mats = reported_asset_mats
 
     @property
     def op_config(self) -> Any:
@@ -709,6 +715,27 @@ class BoundOpExecutionContext(OpExecutionContext):
 
         else:
             self._output_metadata[output_name] = metadata
+
+    def report_asset_materialized(
+        self,
+        asset_key: Optional[CoercibleToAssetKey] = None,
+        metadata: Optional[Mapping[str, Any]] = None,
+    ):
+        if asset_key is None:
+            if len(self.assets_def.keys) != 1:
+                raise DagsterInvariantViolationError(
+                    "report_asset_materialized called without providing asset_key when it can not"
+                    f" be inferred. Valid asset_keys are {self.assets_def.keys}."
+                )
+            asset_key = next(iter(self.assets_def.keys))
+
+        self._reported_asset_mats[AssetKey.from_coercible(asset_key)] = metadata
+
+    def has_reported_asset_materializations(self) -> bool:
+        return bool(self._reported_asset_mats)
+
+    def get_reported_asset_materializations(self) -> Mapping[AssetKey, Optional[Mapping[str, Any]]]:
+        return self._reported_asset_mats
 
 
 def build_op_context(

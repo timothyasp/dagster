@@ -5,6 +5,7 @@ from typing import Sequence
 
 import pytest
 from dagster import (
+    AssetExecutionContext,
     AssetKey,
     AssetOut,
     AssetsDefinition,
@@ -35,6 +36,7 @@ from dagster import (
 from dagster._check import CheckError
 from dagster._core.definitions import AssetIn, SourceAsset, asset, multi_asset
 from dagster._core.definitions.asset_graph import AssetGraph
+from dagster._core.definitions.asset_node import AssetNode
 from dagster._core.definitions.auto_materialize_policy import AutoMaterializePolicy
 from dagster._core.errors import (
     DagsterInvalidDefinitionError,
@@ -42,7 +44,6 @@ from dagster._core.errors import (
     DagsterInvalidPropertyError,
     DagsterInvariantViolationError,
 )
-from dagster._core.execution.context.compute import AssetExecutionContext
 from dagster._core.instance import DagsterInstance
 from dagster._core.storage.mem_io_manager import InMemoryIOManager
 from dagster._core.test_utils import instance_for_test
@@ -1543,8 +1544,9 @@ def test_asset_key_with_prefix():
         AssetKey("foo").with_prefix(1)
 
 
-def _exec_asset(asset_def):
-    asset_job = define_asset_job("testing", [asset_def]).resolve(
+def _exec_asset(asset_def, selection=None):
+    selection = selection if selection is not None else [asset_def]
+    asset_job = define_asset_job("testing", selection).resolve(
         asset_graph=AssetGraph.from_assets([asset_def])
     )
 
@@ -1624,3 +1626,110 @@ def test_multi_asset_return_none():
         match="has multiple outputs, but only one output was returned",
     ):
         untyped()
+
+
+def test_multi_asset_no_out():
+    #
+    # base case
+    #
+    table_A = AssetNode("table_A")
+    table_B = AssetNode("table_B")
+
+    @multi_asset(assets=[table_A, table_B])
+    def basic():
+        pass
+
+    mats = _exec_asset(basic)
+
+    result = basic()
+    assert result is None
+
+    #
+    # internal deps
+    #
+    table_C = AssetNode("table_C", deps=[table_A, table_B])
+
+    @multi_asset(assets=[table_A, table_B, table_C])
+    def basic_deps():
+        pass
+
+    _exec_asset(basic_deps)
+    assert table_A.asset_key in basic_deps.asset_deps[table_C.asset_key]
+    assert table_B.asset_key in basic_deps.asset_deps[table_C.asset_key]
+
+    result = basic_deps()
+    assert result is None
+
+    #
+    # sub-setting
+    #
+
+    @multi_asset(
+        assets=[table_A, table_B],
+        can_subset=True,
+    )
+    def basic_subset(context: AssetExecutionContext):
+        for key in context.selected_asset_keys:
+            context.report_asset_materialized(key)
+
+    mats = _exec_asset(basic_subset, ["table_A"])
+    assert table_B.asset_key not in {mat.asset_key for mat in mats}
+
+    # selected_asset_keys breaks direct invocation
+    # basic_subset(build_asset_context())
+
+    #
+    # metadata
+    #
+    @multi_asset(assets=[table_A, table_B])
+    def metadata(context: AssetExecutionContext):
+        context.report_asset_materialized("table_A", {"one": 1})
+        context.report_asset_materialized("table_B", {"two": 2})
+
+    mats = _exec_asset(metadata)
+    assert len(mats) == 2
+    assert mats[0].metadata["one"]
+    assert mats[1].metadata["two"]
+
+    result = metadata(build_asset_context())
+    assert result is None
+
+
+def test_report_asset_materialized():
+    @asset
+    def reports(context: AssetExecutionContext):
+        context.report_asset_materialized(metadata={"one": 1})
+
+    mats = _exec_asset(reports)
+    assert len(mats) == 1
+    assert mats[0].metadata["one"]
+
+    reports(build_asset_context())
+
+    @multi_asset(outs={"a": AssetOut(), "b": AssetOut()})
+    def fails(context: AssetExecutionContext):
+        context.report_asset_materialized(metadata={"one": 1})
+
+    with pytest.raises(
+        DagsterInvariantViolationError,
+        match="called without providing asset_key when it can not be inferred",
+    ):
+        _exec_asset(fails)
+
+    with pytest.raises(
+        DagsterInvariantViolationError,
+        match="called without providing asset_key when it can not be inferred",
+    ):
+        fails(build_asset_context())
+
+
+def test_multi_asset_nodes_out_names():
+    sales_users = AssetNode(["sales", "users"])
+    marketing_users = AssetNode(["marketing", "users"])
+
+    @multi_asset(assets=[sales_users, marketing_users])
+    def users():
+        pass
+
+    assert len(users.op.output_defs) == 2
+    assert {out_def.name for out_def in users.op.output_defs} == {"sales_users", "marketing_users"}

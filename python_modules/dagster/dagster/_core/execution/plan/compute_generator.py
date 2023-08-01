@@ -199,7 +199,9 @@ def _check_output_object_name(
 
 
 def validate_and_coerce_op_result_to_iterator(
-    result: Any, context: OpExecutionContext, output_defs: Sequence[OutputDefinition]
+    result: Any,
+    context: OpExecutionContext,
+    output_defs: Sequence[OutputDefinition],
 ) -> Generator[Any, None, None]:
     if inspect.isgenerator(result):
         # this happens when a user explicitly returns a generator in the op
@@ -222,6 +224,16 @@ def validate_and_coerce_op_result_to_iterator(
             f" {type(result)}. {context.op_def.node_type_str.capitalize()} is explicitly defined to"
             " return no results."
         )
+    elif (
+        result is None and context.has_assets_def and context.has_reported_asset_materializations()
+    ):
+        for asset_key, metadata in context.get_reported_asset_materializations().items():
+            yield Output(
+                value=None,
+                output_name=context.assets_def.get_output_name_for_asset_key(asset_key),
+                metadata=metadata,
+            )
+
     elif output_defs:
         for position, output_def, element in _zip_and_iterate_op_result(
             result, context, output_defs

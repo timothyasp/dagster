@@ -26,6 +26,7 @@ from dagster._core.definitions.events import (
     AssetKey,
     AssetMaterialization,
     AssetObservation,
+    CoercibleToAssetKey,
     ExpectationResult,
     UserEvent,
 )
@@ -624,6 +625,32 @@ class OpExecutionContext(AbstractComputeExecutionContext):
         return (
             None if record is None else extract_data_provenance_from_entry(record.event_log_entry)
         )
+
+    @public
+    @experimental
+    def report_asset_materialized(
+        self,
+        asset_key: Optional[CoercibleToAssetKey] = None,
+        metadata: Optional[Mapping[str, Any]] = None,
+    ):
+        """Confirm that a specific asset has been materialized and optionally provide metadata.
+        The asset_key argument can be omitted when only one asset is expected to be materialized.
+        """
+        if asset_key is None:
+            if len(self.assets_def.keys) != 1:
+                raise DagsterInvariantViolationError(
+                    "report_asset_materialized called without providing asset_key when it can not"
+                    f" be inferred. Valid asset_keys are {self.assets_def.keys}."
+                )
+            asset_key = next(iter(self.assets_def.keys))
+
+        self._step_execution_context.report_asset_materialized(asset_key, metadata)
+
+    def has_reported_asset_materializations(self) -> bool:
+        return self._step_execution_context.has_reported_asset_materializations()
+
+    def get_reported_asset_materializations(self) -> Mapping[AssetKey, Optional[Mapping[str, Any]]]:
+        return self._step_execution_context.get_reported_asset_materializations()
 
 
 # actually forking the object type for assets is tricky for users in the cases of:

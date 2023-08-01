@@ -34,6 +34,7 @@ from dagster._utils.warnings import (
 )
 
 from ..asset_in import AssetIn
+from ..asset_node import AssetNode
 from ..asset_out import AssetOut
 from ..assets import AssetsDefinition
 from ..backfill_policy import BackfillPolicy, BackfillPolicyType
@@ -438,7 +439,8 @@ class _Asset:
 )
 def multi_asset(
     *,
-    outs: Mapping[str, AssetOut],
+    outs: Optional[Mapping[str, AssetOut]] = None,
+    assets: Optional[Sequence[AssetNode]] = None,
     name: Optional[str] = None,
     ins: Optional[Mapping[str, AssetIn]] = None,
     deps: Optional[Sequence[Union[CoercibleToAssetKey, AssetsDefinition, SourceAsset]]] = None,
@@ -562,10 +564,28 @@ def multi_asset(
     resource_defs_keys = set(resource_defs.keys())
     required_resource_keys = bare_required_resource_keys | resource_defs_keys
 
+    asset_out_map: Mapping[str, AssetOut] = {} if outs is None else outs
+
     def inner(fn: Callable[..., Any]) -> AssetsDefinition:
         op_name = name or fn.__name__
         asset_ins = build_asset_ins(fn, ins or {}, deps=_make_asset_keys(upstream_asset_deps))
-        asset_outs = build_asset_outs(outs)
+
+        if asset_out_map and assets:
+            raise DagsterInvalidDefinitionError("Must specify only outs or assets but not both.")
+        elif assets:
+            outs_by_asset_key = {}
+            for asset_node in assets:
+                # output names are asset keys joined with _
+                output_name = "_".join(asset_node.asset_key.path)
+                outs_by_asset_key[asset_node.asset_key] = (
+                    output_name,
+                    Out(
+                        Nothing,
+                        is_required=not can_subset,
+                    ),
+                )
+        else:
+            outs_by_asset_key = build_asset_outs(asset_out_map)
 
         arg_resource_keys = {arg.name for arg in get_resource_args(fn)}
         check.param_invariant(
@@ -575,14 +595,14 @@ def multi_asset(
         )
 
         # validate that the asset_deps make sense
-        valid_asset_deps = set(asset_ins.keys()) | set(asset_outs.keys())
+        valid_asset_deps = set(asset_ins.keys()) | set(outs_by_asset_key.keys())
         for out_name, asset_keys in asset_deps.items():
-            check.invariant(
-                out_name in outs,
-                f"Invalid out key '{out_name}' supplied to `internal_asset_deps` argument for"
-                f" multi-asset {op_name}. Must be one of the outs for this multi-asset"
-                f" {list(outs.keys())[:20]}.",
-            )
+            if asset_out_map and out_name not in asset_out_map:
+                check.failed(
+                    f"Invalid out key '{out_name}' supplied to `internal_asset_deps` argument for"
+                    f" multi-asset {op_name}. Must be one of the outs for this multi-asset"
+                    f" {list(asset_out_map.keys())[:20]}.",
+                )
             invalid_asset_deps = asset_keys.difference(valid_asset_deps)
             check.invariant(
                 not invalid_asset_deps,
@@ -599,7 +619,7 @@ def multi_asset(
                 name=op_name,
                 description=description,
                 ins=dict(asset_ins.values()),
-                out=dict(asset_outs.values()),
+                out=dict(outs_by_asset_key.values()),
                 required_resource_keys=op_required_resource_keys,
                 tags={
                     **({"kind": compute_kind} if compute_kind else {}),
@@ -614,53 +634,79 @@ def multi_asset(
             input_name: asset_key for asset_key, (input_name, _) in asset_ins.items()
         }
         keys_by_output_name = {
-            output_name: asset_key for asset_key, (output_name, _) in asset_outs.items()
+            output_name: asset_key for asset_key, (output_name, _) in outs_by_asset_key.items()
         }
 
-        # source group names from the AssetOuts (if any)
-        group_names_by_key = {
-            keys_by_output_name[output_name]: out.group_name
-            for output_name, out in outs.items()
-            if out.group_name is not None
-        }
-        if group_name:
-            check.invariant(
-                not group_names_by_key,
-                "Cannot set group_name parameter on multi_asset if one or more of the AssetOuts"
-                " supplied to this multi_asset have a group_name defined.",
-            )
+        # build by key structures via outputs
+        if assets:
+            partition_mappings = {
+                # node.asset_key: node.partition_mapping for node in assets
+            }
             group_names_by_key = {
-                asset_key: group_name for asset_key in keys_by_output_name.values()
+                node.asset_key: node.group_name for node in assets if node.group_name is not None
+            }
+            # if group_name: # handle this case
+
+            freshness_policies_by_key = {
+                node.asset_key: node.freshness_policy
+                for node in assets
+                if node.freshness_policy is not None
+            }
+            auto_materialize_policies_by_key = {
+                node.asset_key: node.auto_materialize_policy
+                for node in assets
+                if node.auto_materialize_policy is not None
+            }
+            metadata_by_key = {
+                node.asset_key: node.metadata for node in assets if node.metadata is not None
+            }
+            internal_deps = {node.asset_key: node.deps for node in assets if node.deps is not None}
+        else:
+            # source group names from the AssetOuts (if any)
+            group_names_by_key = {
+                keys_by_output_name[output_name]: out.group_name
+                for output_name, out in asset_out_map.items()
+                if out.group_name is not None
+            }
+            if group_name:
+                check.invariant(
+                    not group_names_by_key,
+                    "Cannot set group_name parameter on multi_asset if one or more of the AssetOuts"
+                    " supplied to this multi_asset have a group_name defined.",
+                )
+                group_names_by_key = {
+                    asset_key: group_name for asset_key in keys_by_output_name.values()
+                }
+
+            # source freshness policies from the AssetOuts (if any)
+            freshness_policies_by_key = {
+                keys_by_output_name[output_name]: out.freshness_policy
+                for output_name, out in asset_out_map.items()
+                if out.freshness_policy is not None
+            }
+            auto_materialize_policies_by_key = {
+                keys_by_output_name[output_name]: out.auto_materialize_policy
+                for output_name, out in asset_out_map.items()
+                if out.auto_materialize_policy is not None
             }
 
-        # source freshness policies from the AssetOuts (if any)
-        freshness_policies_by_key = {
-            keys_by_output_name[output_name]: out.freshness_policy
-            for output_name, out in outs.items()
-            if out.freshness_policy is not None
-        }
-        auto_materialize_policies_by_key = {
-            keys_by_output_name[output_name]: out.auto_materialize_policy
-            for output_name, out in outs.items()
-            if out.auto_materialize_policy is not None
-        }
-
-        partition_mappings = {
-            keys_by_input_name[input_name]: asset_in.partition_mapping
-            for input_name, asset_in in (ins or {}).items()
-            if asset_in.partition_mapping is not None
-        }
-        metadata_by_key = {
-            keys_by_output_name[output_name]: out.metadata
-            for output_name, out in outs.items()
-            if out.metadata is not None
-        }
+            partition_mappings = {
+                keys_by_input_name[input_name]: asset_in.partition_mapping
+                for input_name, asset_in in (ins or {}).items()
+                if asset_in.partition_mapping is not None
+            }
+            metadata_by_key = {
+                keys_by_output_name[output_name]: out.metadata
+                for output_name, out in asset_out_map.items()
+                if out.metadata is not None
+            }
+            internal_deps = {keys_by_output_name[name]: asset_deps[name] for name in asset_deps}
 
         return AssetsDefinition.dagster_internal_init(
             keys_by_input_name=keys_by_input_name,
             keys_by_output_name=keys_by_output_name,
             node_def=op,
-            asset_deps={keys_by_output_name[name]: asset_deps[name] for name in asset_deps},
+            asset_deps=internal_deps,
             partitions_def=partitions_def,
             partition_mappings=partition_mappings if partition_mappings else None,
             can_subset=can_subset,

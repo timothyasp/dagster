@@ -29,7 +29,7 @@ from dagster._core.definitions.data_version import (
     SKIP_PARTITION_DATA_VERSION_DEPENDENCY_THRESHOLD,
 )
 from dagster._core.definitions.dependency import OpNode
-from dagster._core.definitions.events import AssetKey, AssetLineageInfo
+from dagster._core.definitions.events import AssetKey, AssetLineageInfo, CoercibleToAssetKey
 from dagster._core.definitions.hook_definition import HookDefinition
 from dagster._core.definitions.job_base import IJob
 from dagster._core.definitions.job_definition import JobDefinition
@@ -547,6 +547,7 @@ class StepExecutionContext(PlanExecutionContext, IStepContext):
         self._input_asset_version_info: Dict[AssetKey, Optional["InputAssetVersionInfo"]] = {}
         self._is_external_input_asset_version_info_loaded = False
         self._data_version_cache: Dict[AssetKey, "DataVersion"] = {}
+        self._reported_asset_mats: Dict[AssetKey, Optional[Mapping[str, Any]]] = {}
 
     @property
     def step(self) -> ExecutionStep:
@@ -808,6 +809,19 @@ class StepExecutionContext(PlanExecutionContext, IStepContext):
             "or because all the previous runs have skipped the output in conditional execution."
         )
         return None
+
+    def report_asset_materialized(
+        self,
+        asset_key: CoercibleToAssetKey,
+        metadata: Optional[Mapping[str, Any]],
+    ):
+        self._reported_asset_mats[AssetKey.from_coercible(asset_key)] = metadata
+
+    def has_reported_asset_materializations(self) -> bool:
+        return bool(self._reported_asset_mats)
+
+    def get_reported_asset_materializations(self) -> Mapping[AssetKey, Optional[Mapping[str, Any]]]:
+        return self._reported_asset_mats
 
     def _should_load_from_previous_runs(self, step_output_handle: StepOutputHandle) -> bool:
         # should not load if not a re-execution
