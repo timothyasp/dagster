@@ -5,6 +5,7 @@ from typing import (
     Any,
     Callable,
     Dict,
+    Iterable,
     Mapping,
     Optional,
     Sequence,
@@ -35,7 +36,7 @@ from dagster._utils.backcompat import (
 
 from ..asset_in import AssetIn
 from ..asset_out import AssetOut
-from ..assets import AssetsDefinition
+from ..assets import ASSET_SUBSET_INPUT_PREFIX, AssetsDefinition
 from ..backfill_policy import BackfillPolicy, BackfillPolicyType
 from ..decorators.graph_decorator import graph
 from ..decorators.op_decorator import _Op
@@ -569,6 +570,15 @@ def multi_asset(
         asset_ins = build_asset_ins(fn, ins or {}, deps=_make_asset_keys(upstream_asset_deps))
         asset_outs = build_asset_outs(outs)
 
+        # when a subsettable multi-asset is defined, it is possible that it will need to be
+        # broken into two separate parts, one which depends on the other. in order to represent
+        # this in the op execution graph, inputs need to be added to connect these possible deps
+        if can_subset and internal_asset_deps:
+            asset_ins = {
+                **asset_ins,
+                **build_subsettable_asset_ins(asset_ins, asset_outs, internal_asset_deps.values()),
+            }
+
         arg_resource_keys = {arg.name for arg in get_resource_args(fn)}
         check.param_invariant(
             len(bare_required_resource_keys or []) == 0 or len(arg_resource_keys) == 0,
@@ -751,6 +761,23 @@ def build_asset_ins(
         ins_by_asset_key[asset_key] = (stringified_asset_key, In(cast(type, Nothing)))
 
     return ins_by_asset_key
+
+
+def build_subsettable_asset_ins(
+    asset_ins: Mapping[AssetKey, Tuple[str, In]],
+    asset_outs: Mapping[AssetKey, Tuple[str, Out]],
+    upstream_deps: Iterable[AbstractSet[AssetKey]],
+) -> Mapping[AssetKey, Tuple[str, In]]:
+    """Creates a mapping from AssetKey to (name of input, In object) for any asset key that is not
+    currently an input, but may become one if this asset is subset.
+    """
+    # set of asset keys which are upstream of another asset, and are not currently inputs
+    potential_deps = set().union(*upstream_deps) - set(asset_ins.keys())
+    return {
+        key: (f"{ASSET_SUBSET_INPUT_PREFIX}{name}", In(Nothing))
+        for key, (name, _) in asset_outs.items()
+        if key in potential_deps
+    }
 
 
 @overload

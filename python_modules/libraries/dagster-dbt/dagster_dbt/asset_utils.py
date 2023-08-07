@@ -32,6 +32,7 @@ from dagster import (
     _check as check,
     define_asset_job,
 )
+from dagster._core.definitions.decorators.asset_decorator import build_subsettable_asset_ins
 from dagster._utils.backcompat import deprecation_warning
 from dagster._utils.merger import merge_dicts
 
@@ -638,7 +639,6 @@ def get_asset_deps(
                 code_version=default_code_version_fn(node_info),
             ),
         )
-
         group_name = dagster_dbt_translator.get_group_name(node_info)
         if group_name is not None:
             group_names_by_key[asset_key] = group_name
@@ -664,7 +664,7 @@ def get_asset_deps(
 
     return (
         asset_deps,
-        asset_ins,
+        {**asset_ins, **build_subsettable_asset_ins(asset_ins, asset_outs, deps.values())},
         asset_outs,
         group_names_by_key,
         freshness_policies_by_key,
