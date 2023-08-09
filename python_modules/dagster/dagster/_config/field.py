@@ -326,7 +326,7 @@ class Field:
                     )
                 )
 
-            evr = validate_config(self.config_type, default_value)
+            evr = validate_config(self.config_type, default_value, allow_envvar=True)
             if not evr.success:
                 raise DagsterInvalidConfigError(
                     "Invalid default_value for Field.",

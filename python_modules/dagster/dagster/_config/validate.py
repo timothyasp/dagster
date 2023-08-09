@@ -54,7 +54,7 @@ def is_config_scalar_valid(config_type_snap: ConfigTypeSnap, config_value: objec
         check.failed(f"Not a supported scalar {config_type_snap}")
 
 
-def validate_config(config_schema: object, config_value: T) -> EvaluateValueResult[T]:
+def validate_config(config_schema: object, config_value: T, allow_envvar: bool = False) -> EvaluateValueResult[T]:
     config_type = resolve_to_config_type(config_schema)
     config_type = check.inst(cast(ConfigType, config_type), ConfigType)
 
@@ -62,11 +62,13 @@ def validate_config(config_schema: object, config_value: T) -> EvaluateValueResu
         config_schema_snapshot=config_type.get_schema_snapshot(),
         config_type_key=config_type.key,
         config_value=config_value,
+        allow_envvar=allow_envvar,
     )
 
 
 def validate_config_from_snap(
-    config_schema_snapshot: ConfigSchemaSnapshot, config_type_key: str, config_value: T
+    config_schema_snapshot: ConfigSchemaSnapshot, config_type_key: str, config_value: T,
+    allow_envvar: bool = False,
 ) -> EvaluateValueResult[T]:
     check.inst_param(config_schema_snapshot, "config_schema_snapshot", ConfigSchemaSnapshot)
     check.str_param(config_type_key, "config_type_key")
@@ -75,6 +77,7 @@ def validate_config_from_snap(
             config_schema_snapshot=config_schema_snapshot,
             config_type_snap=config_schema_snapshot.get_config_snap(config_type_key),
             stack=EvaluationStack(entries=[]),
+            allow_envvar=allow_envvar,
         ),
         config_value,
     )
@@ -104,7 +107,7 @@ def _validate_config(context: ValidationContext, config_value: object) -> Evalua
         if not is_config_scalar_valid(context.config_type_snap, config_value):
             return EvaluateValueResult.for_error(create_scalar_error(context, config_value))
         # If user passes an EnvVar or IntEnvVar to a non-structured run config dictionary, throw explicit error
-        if context.config_type_snap.scalar_kind == ConfigScalarKind.STRING and isinstance(
+        if not context.allow_envvar and context.config_type_snap.scalar_kind == ConfigScalarKind.STRING and isinstance(
             config_value, (EnvVar, IntEnvVar)
         ):
             return EvaluateValueResult.for_error(
