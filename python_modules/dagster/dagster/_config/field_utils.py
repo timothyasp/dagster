@@ -474,7 +474,11 @@ def config_dictionary_from_values(
     return check.is_dict(_config_value_to_dict_representation(None, values))
 
 
-class IntEnvVar(int):
+class DagsterEnvVar:
+    """Marker class used to represent an environment variable in the Dagster config system."""
+
+
+class IntEnvVar(int, DagsterEnvVar):
     """Class used to represent an environment variable in the Dagster config system.
 
     The environment variable will be resolved to an int value when the config is
@@ -490,7 +494,7 @@ class IntEnvVar(int):
         return var
 
 
-class EnvVar(str):
+class EnvVar(str, DagsterEnvVar):
     """Class used to represent an environment variable in the Dagster config system.
 
     The environment variable will be resolved to a string value when the config is
