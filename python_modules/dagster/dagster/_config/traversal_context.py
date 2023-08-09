@@ -55,7 +55,7 @@ class ContextData:
     @property
     def stack(self) -> EvaluationStack:
         return self._stack
-    
+
     @property
     def allow_envvar(self) -> bool:
         return self._allow_envvar
@@ -69,7 +69,7 @@ class ValidationContext(ContextData):
             config_schema_snapshot=self.config_schema_snapshot,
             config_type_snap=self.config_schema_snapshot.get_config_snap(field_snap.type_key),
             stack=self.stack.for_field(field_snap_name),
-            allow_envvar=self.allow_envvar
+            allow_envvar=self.allow_envvar,
         )
 
     def for_array(self, index: int) -> "ValidationContext":
@@ -80,7 +80,7 @@ class ValidationContext(ContextData):
                 self.config_type_snap.inner_type_key
             ),
             stack=self.stack.for_array_index(index),
-            allow_envvar=self.allow_envvar
+            allow_envvar=self.allow_envvar,
         )
 
     def for_map_key(self, key: object) -> "ValidationContext":
@@ -90,7 +90,7 @@ class ValidationContext(ContextData):
                 self.config_type_snap.key_type_key
             ),
             stack=self.stack.for_map_key(key),
-            allow_envvar=self.allow_envvar
+            allow_envvar=self.allow_envvar,
         )
 
     def for_map_value(self, key: object) -> "ValidationContext":
@@ -100,7 +100,7 @@ class ValidationContext(ContextData):
                 self.config_type_snap.inner_type_key
             ),
             stack=self.stack.for_map_value(key),
-            allow_envvar=self.allow_envvar
+            allow_envvar=self.allow_envvar,
         )
 
     def for_new_config_type_key(self, config_type_key: str) -> "ValidationContext":
@@ -109,7 +109,7 @@ class ValidationContext(ContextData):
             config_schema_snapshot=self.config_schema_snapshot,
             config_type_snap=self.config_schema_snapshot.get_config_snap(config_type_key),
             stack=self.stack,
-            allow_envvar=self.allow_envvar
+            allow_envvar=self.allow_envvar,
         )
 
     def for_nullable_inner_type(self) -> "ValidationContext":
@@ -119,7 +119,7 @@ class ValidationContext(ContextData):
                 self.config_type_snap.inner_type_key
             ),
             stack=self.stack,
-            allow_envvar=self.allow_envvar
+            allow_envvar=self.allow_envvar,
         )
 
 
