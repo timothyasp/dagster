@@ -1,6 +1,6 @@
 # encoding: utf-8
 import hashlib
-from typing import TYPE_CHECKING, Any, Dict, Iterator, List, Mapping, Optional, Sequence
+from typing import TYPE_CHECKING, Any, Dict, Iterator, List, Mapping, Optional, Sequence, Union
 
 import dagster._check as check
 from dagster._annotations import public
@@ -474,11 +474,7 @@ def config_dictionary_from_values(
     return check.is_dict(_config_value_to_dict_representation(None, values))
 
 
-class DagsterEnvVar:
-    """Marker class used to represent an environment variable in the Dagster config system."""
-
-
-class IntEnvVar(int, DagsterEnvVar):
+class IntEnvVar(int):
     """Class used to represent an environment variable in the Dagster config system.
 
     The environment variable will be resolved to an int value when the config is
@@ -494,7 +490,7 @@ class IntEnvVar(int, DagsterEnvVar):
         return var
 
 
-class EnvVar(str, DagsterEnvVar):
+class EnvVar(str):
     """Class used to represent an environment variable in the Dagster config system.
 
     The environment variable will be resolved to a string value when the config is
@@ -504,3 +500,6 @@ class EnvVar(str, DagsterEnvVar):
     @classmethod
     def int(cls, name: str) -> "IntEnvVar":
         return IntEnvVar.create(name=name)
+
+
+DagsterEnvVar = Union[EnvVar, IntEnvVar]
