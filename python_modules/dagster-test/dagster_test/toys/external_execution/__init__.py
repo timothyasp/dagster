@@ -2,7 +2,9 @@ import os
 import sys
 
 from dagster import AssetExecutionContext, Config, Definitions, asset
-from dagster._core.external_execution.resource import ExternalExecutionResource
+from dagster._core.external_execution.subprocess import (
+    SubprocessExecutionResource,
+)
 from dagster_external.protocol import ExternalExecutionIOMode
 from pydantic import Field
 
@@ -32,25 +34,30 @@ class NumberConfig(Config):
 
 @asset
 def number_x(
-    context: AssetExecutionContext, ext: ExternalExecutionResource, config: NumberConfig
+    context: AssetExecutionContext, ext: SubprocessExecutionResource, config: NumberConfig
 ) -> None:
     extras = {**get_common_extras(context), "multiplier": config.multiplier}
-    ext.run(command_for_asset("number_x"), context, extras)
+    ext.run(command_for_asset("number_x"), context=context, extras=extras)
 
 
 @asset
-def number_y(context: AssetExecutionContext, ext: ExternalExecutionResource, config: NumberConfig):
-    extras = {**get_common_extras(context), "multiplier": config.multiplier}
-    env = {"NUMBER_Y": "4"}
-    ext.run(command_for_asset("number_y"), context, extras, env)
+def number_y(
+    context: AssetExecutionContext, ext: SubprocessExecutionResource, config: NumberConfig
+):
+    ext.run(
+        command_for_asset("number_y"),
+        context=context,
+        extras=get_common_extras(context),
+        env={"NUMBER_Y": "4"},
+    )
 
 
 @asset(deps=[number_x, number_y])
-def number_sum(context: AssetExecutionContext, ext: ExternalExecutionResource) -> None:
-    ext.run(command_for_asset("number_sum"), context, get_common_extras(context))
+def number_sum(context: AssetExecutionContext, ext: SubprocessExecutionResource) -> None:
+    ext.run(command_for_asset("number_sum"), context=context, extras=get_common_extras(context))
 
 
-ext = ExternalExecutionResource(
+ext = SubprocessExecutionResource(
     input_mode=ExternalExecutionIOMode.stdio,
     output_mode=ExternalExecutionIOMode.stdio,
     env=get_env(),
