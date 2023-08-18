@@ -27,6 +27,7 @@ from dagster._core.definitions import (
 )
 from dagster._core.definitions.asset_layer import AssetLayer
 from dagster._core.definitions.op_definition import OpComputeFunction
+from dagster._core.definitions.result import MaterializeResult
 from dagster._core.errors import DagsterExecutionStepExecutionError, DagsterInvariantViolationError
 from dagster._core.events import DagsterEvent
 from dagster._core.execution.context.compute import OpExecutionContext
@@ -94,6 +95,7 @@ def _validate_event(event: Any, step_context: StepExecutionContext) -> OpOutputU
             ExpectationResult,
             AssetObservation,
             DagsterEvent,
+            MaterializeResult,
         ),
     ):
         raise DagsterInvariantViolationError(

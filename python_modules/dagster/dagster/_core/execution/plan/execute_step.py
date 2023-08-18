@@ -44,6 +44,7 @@ from dagster._core.definitions.multi_dimensional_partitions import (
     MultiPartitionKey,
     get_tags_from_multi_partition_key,
 )
+from dagster._core.definitions.result import MaterializeResult
 from dagster._core.errors import (
     DagsterExecutionHandleOutputError,
     DagsterInvariantViolationError,
@@ -72,6 +73,42 @@ from dagster._utils.warnings import (
 from .compute import OpOutputUnion
 from .compute_generator import create_op_compute_wrapper
 from .utils import op_execution_error_boundary
+
+
+def _process_asset_results_to_events(
+    step_context: StepExecutionContext,
+    user_event_sequence: Iterator[OpOutputUnion],
+) -> Iterator[OpOutputUnion]:
+    """Handle converting AssetResult (& AssetCheckResult soon) to their appropriate events."""
+    for user_event in user_event_sequence:
+        if isinstance(user_event, MaterializeResult):
+            assets_def = step_context.job_def.asset_layer.assets_def_for_node(
+                step_context.node_handle
+            )
+            if not assets_def:
+                raise DagsterInvariantViolationError(
+                    "MaterializeResult is only valid within asset computations, no backing"
+                    " AssetsDefinition found."
+                )
+            if user_event.asset_key:
+                asset_key = user_event.asset_key
+            else:
+                if len(assets_def.keys) != 1:
+                    raise DagsterInvariantViolationError(
+                        "MaterializeResult did not include asset_key and it can not be inferred."
+                        f" Specify which asset_key, options are: {assets_def.keys}."
+                    )
+                asset_key = assets_def.key
+
+            output_name = assets_def.get_output_name_for_asset_key(asset_key)
+            output = Output(
+                value=None,
+                output_name=output_name,
+                metadata=user_event.metadata,
+            )
+            yield output
+        else:
+            yield user_event
 
 
 def _step_output_error_checked_user_event_sequence(
@@ -403,8 +440,9 @@ def core_dagster_event_sequence_for_step(
 
         # It is important for this loop to be indented within the
         # timer block above in order for time to be recorded accurately.
-        for user_event in check.generator(
-            _step_output_error_checked_user_event_sequence(step_context, user_event_sequence)
+        for user_event in _step_output_error_checked_user_event_sequence(
+            step_context,
+            _process_asset_results_to_events(step_context, user_event_sequence),
         ):
             if isinstance(user_event, DagsterEvent):
                 yield user_event
