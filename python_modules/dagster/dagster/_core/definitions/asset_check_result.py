@@ -68,7 +68,9 @@ class AssetCheckResult(
     def to_asset_check_evaluation(
         self, step_context: "StepExecutionContext"
     ) -> AssetCheckEvaluation:
-        specs = step_context.job_def.asset_layer.check_specs_for_node(step_context.node_handle)
+        specs = step_context.job_def.asset_layer.asset_check_specs_for_node(
+            step_context.node_handle
+        )
 
         spec_check_names_by_asset_key: Dict[AssetKey, Set[str]] = defaultdict(set)
         for spec in specs:

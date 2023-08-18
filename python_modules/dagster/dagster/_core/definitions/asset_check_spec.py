@@ -6,6 +6,12 @@ from dagster._core.definitions.events import AssetKey, CoercibleToAssetKey
 
 
 @experimental
+class AssetCheckHandle(NamedTuple):
+    name: PublicAttr[str]
+    asset_key: PublicAttr[AssetKey]
+
+
+@experimental
 class AssetCheckSpec(
     NamedTuple(
         "_AssetCheckSpec",
@@ -41,3 +47,7 @@ class AssetCheckSpec(
             asset_key=AssetKey.from_coercible(asset_key),
             description=check.opt_str_param(description, "description"),
         )
+
+    @property
+    def handle(self) -> AssetCheckHandle:
+        return AssetCheckHandle(self.name, self.asset_key)
