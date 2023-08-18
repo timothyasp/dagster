@@ -1,0 +1,148 @@
+import re
+
+import pytest
+from dagster import (
+    AssetCheckResult,
+    AssetCheckSpec,
+    AssetKey,
+    MetadataValue,
+    Output,
+    asset,
+    materialize,
+)
+from dagster._core.errors import DagsterInvariantViolationError, DagsterStepOutputNotFoundError
+
+
+def test_asset_check_same_op():
+    @asset(check_specs=[AssetCheckSpec("check1", asset_key="asset1", description="desc")])
+    def asset1():
+        yield Output(None)
+        yield AssetCheckResult(check_name="check1", success=True, metadata={"foo": "bar"})
+
+    result = materialize(assets=[asset1])
+    assert result.success
+
+    check_evals = result.get_asset_check_evaluations()
+    assert len(check_evals) == 1
+    check_eval = check_evals[0]
+    assert check_eval.asset_key == asset1.key
+    assert check_eval.check_name == "check1"
+    assert check_eval.metadata == {"foo": MetadataValue.text("bar")}
+
+
+def test_check_targets_other_asset():
+    @asset(check_specs=[AssetCheckSpec("check1", asset_key="asset2", description="desc")])
+    def asset1():
+        yield Output(None)
+        yield AssetCheckResult(
+            asset_key="asset2", check_name="check1", success=True, metadata={"foo": "bar"}
+        )
+
+    result = materialize(assets=[asset1])
+    assert result.success
+
+    check_evals = result.get_asset_check_evaluations()
+    assert len(check_evals) == 1
+    check_eval = check_evals[0]
+    assert check_eval.asset_key == AssetKey("asset2")
+    assert check_eval.check_name == "check1"
+    assert check_eval.metadata == {"foo": MetadataValue.text("bar")}
+
+
+def test_check_targets_other_asset_and_result_omits_key():
+    @asset(check_specs=[AssetCheckSpec("check1", asset_key="asset2", description="desc")])
+    def asset1():
+        yield Output(None)
+        yield AssetCheckResult(check_name="check1", success=True, metadata={"foo": "bar"})
+
+    result = materialize(assets=[asset1])
+    assert result.success
+
+    check_evals = result.get_asset_check_evaluations()
+    assert len(check_evals) == 1
+    check_eval = check_evals[0]
+    assert check_eval.asset_key == AssetKey("asset2")
+    assert check_eval.check_name == "check1"
+    assert check_eval.metadata == {"foo": MetadataValue.text("bar")}
+
+
+def test_no_result_for_check():
+    @asset(check_specs=[AssetCheckSpec("check1", asset_key="asset1")])
+    def asset1():
+        yield Output(None)
+
+    with pytest.raises(
+        DagsterStepOutputNotFoundError,
+        match=(
+            'Core compute for op "asset1" did not return an output for non-optional output'
+            ' "asset1_check1"'
+        ),
+    ):
+        materialize(assets=[asset1])
+
+
+def test_check_result_but_no_output():
+    @asset(check_specs=[AssetCheckSpec("check1", asset_key="asset1")])
+    def asset1():
+        yield AssetCheckResult(success=True)
+
+    with pytest.raises(
+        DagsterStepOutputNotFoundError,
+        match=(
+            'Core compute for op "asset1" did not return an output for non-optional output "result"'
+        ),
+    ):
+        materialize(assets=[asset1])
+
+
+def test_unexpected_check_name():
+    @asset(check_specs=[AssetCheckSpec("check1", asset_key=AssetKey("asset1"), description="desc")])
+    def asset1():
+        return AssetCheckResult(check_name="check2", success=True, metadata={"foo": "bar"})
+
+    with pytest.raises(
+        DagsterInvariantViolationError,
+        match=(
+            "No checks currently being evaluated target asset 'asset1' and have name"
+            " 'check2'. Checks being evaluated for this asset: {'check1'}"
+        ),
+    ):
+        materialize(assets=[asset1])
+
+
+def test_asset_decorator_unexpected_asset_key():
+    @asset(check_specs=[AssetCheckSpec("check1", asset_key=AssetKey("asset1"), description="desc")])
+    def asset1():
+        return AssetCheckResult(asset_key=AssetKey("asset2"), check_name="check1", success=True)
+
+    with pytest.raises(
+        DagsterInvariantViolationError,
+        match=re.escape(
+            "Received unexpected AssetCheckResult. It targets asset 'asset2' which is not targeted"
+            " by any of the checks currently being evaluated. Targeted assets: ['asset1']."
+        ),
+    ):
+        materialize(assets=[asset1])
+
+
+def test_asset_check_fails_downstream_still_executes():
+    @asset(check_specs=[AssetCheckSpec("check1", asset_key=AssetKey("asset1"), description="desc")])
+    def asset1():
+        return AssetCheckResult(success=False)
+
+    @asset(deps=[asset1])
+    def asset2():
+        ...
+
+
+def test_duplicate_checks_same_asset():
+    with pytest.raises(AssertionError):
+
+        @asset(
+            check_specs=[
+                AssetCheckSpec("check1", asset_key="asset1", description="desc1"),
+                AssetCheckSpec("check1", asset_key="asset1", description="desc2"),
+            ]
+        )
+        def asset1():
+            ...
